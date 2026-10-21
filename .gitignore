@@ -1,0 +1,16 @@
+# Secrets and local config
+.env
+*.env
+*.key
+*.pem
+secrets/
+
+# Captures and logs (can contain real IPs and hostnames)
+*.pcap
+*.pcapng
+*.log
+
+# OS and editor files
+Thumbs.db
+.DS_Store
+.vscode/
