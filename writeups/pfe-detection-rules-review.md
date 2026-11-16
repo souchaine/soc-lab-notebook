@@ -12,7 +12,7 @@ The lab in one paragraph: an isolated VMware network with three VMs. An attacker
 
 **Short version**
 
-- All 7 scenarios were detected in the lab. But "it fired at least once" is the only thing I tested.
+- Each of the 7 rules fired at least once in the lab session where I ran the 7 attacks. That is the only thing I tested: not how often a rule fires, not what else makes it fire, not what it misses.
 - Every rule alerts on each matching packet, request or query, with no grouping. One test session produced 3,504 alerts from these 7 rules.
 - Most rules match the default fingerprint of the tool I used, and the severity levels do not match how sure each rule is.
 
@@ -40,7 +40,7 @@ Alerts per rule in the Wazuh validation log I saved for one test session:
 | Reverse shell | 9000006 | 100006 | 97 |
 | DNS exfiltration | 9000007 | 100007 | 9 |
 
-The log does not say how many times each attack was run, so these are numbers per session, not per attack.
+The log does not say how many times each attack was run, or which attack caused which alert. So these are numbers per session, not per attack.
 
 ## How to read the tables
 
@@ -79,7 +79,7 @@ alert http any any -> $HOME_NET any (msg:"PFE RECON Nmap NSE user-agent detected
 | Likely false positives | Few. An admin or a security team running Nmap on purpose. |
 | Detection gaps | The User-Agent is a setting the scanner controls. HTTPS is not inspected. It only fires when a web service is open and the HTTP scripts run, so a version scan of SSH alone never triggers it. |
 | Severity I should assign | Low (Wazuh 6). I can be sure the tool is Nmap, but the impact is low. Today it is 7. |
-| How I would test it | Positive: `sudo nmap -sC -p 80 <victim>`. Negative: a version scan of the SSH port only, where no alert is expected. Variant: the same script scan with a non-default User-Agent, and record the miss. Also check whether ET Open already has this signature: `grep -i "Nmap Scripting Engine"` in the merged rules file. |
+| How I would test it | Positive: `sudo nmap -sC -p 80 <victim>`. Negative: a version scan of the SSH port only, where no alert is expected. Variant: the same script scan with a non-default User-Agent, and record the miss. ET Open already has this signature (SID 2009358), so my rule repeats it. |
 
 ### SID 9000003 · SSH brute force
 
@@ -188,7 +188,7 @@ Findings that apply to all seven:
 
 1. **They only relabel.** No rule looks at two events together, counts anything, or excludes a known-good source. Joining events is the main thing a SIEM rule can do that a sensor rule cannot, and none of mine does it.
 2. **The levels do not follow confidence.** The port-list rule is level 14. A single DNS query is level 12. Every rule is 7 or higher.
-3. **Two group names claim things that were not seen.** Rule 100003 has the group `authentication_failed`, but it saw connections, not failed logins. Wazuh's own rules and dashboards use that group for real login failures. Rule 100006 has `trojan,malware`, but it saw a port number.
+3. **Two group names claim things that were not seen.** Rule 100003 has the group `authentication_failed`, but it saw connections, not failed logins. Wazuh's own sshd rules use that group for real login failures. Rule 100006 has `trojan,malware`, but it saw a port number.
 4. **The parent could be more exact.** `<if_group>suricata</if_group>` works. `<if_sid>86601</if_sid>` points at Wazuh's built-in "Suricata alert" rule, so only alert events can reach my rule.
 5. **The descriptions are fixed text.** Adding `$(src_ip)` shows who triggered the alert without opening the JSON.
 
@@ -215,7 +215,7 @@ alert tcp any any -> $HOME_NET any (msg:"PFE RECON High rate of TCP SYN from one
 ```
 
 - `detection_filter` became `threshold:type both`: one alert per source per 10-second window instead of one per packet (1,732 alerts in my log).
-- `flags:S` became `flags:S,12`: ignores the two ECN bits, so SYN packets from hosts that use ECN are counted too.
+- `flags:S` became `flags:S,12`: the form ET Open's own SSH scan rule uses. It ignores the two ECN bits, so SYN packets from hosts that use ECN are counted too.
 - `flow:to_server` added: only client-to-server SYN packets. My notes say Suricata printed a "poor rule" warning for my SYN-only SSH rule until this was added.
 - New message: it no longer says "Nmap", because nothing in the rule is specific to Nmap.
 - `metadata` key renamed to `mitre_technique_id`: the key name the ET Open rules use. Nothing in my project reads the old key.
@@ -239,6 +239,7 @@ alert tcp any any -> $HOME_NET 22 (msg:"PFE BRUTEFORCE High rate of new SSH conn
 - `threshold:type both`, `flags:S,12` and `flow:to_server`: same three reasons as SID 9000001.
 - New message: it names what is measured, a connection rate, because the rule cannot see logins.
 - ATT&CK ID changed to the sub-technique T1110.001: guessing from a wordlist is Password Guessing.
+- The result is the same logic as ET Open's "Potential SSH Scan" rule (SID 2001219), which ET rates as Informational.
 
 **SID 9000004 rev 2 (UNTESTED)**
 
@@ -268,7 +269,7 @@ alert http any any -> $HOME_NET any (msg:"PFE WEB SQL injection UNION SELECT att
 - Second `content` with `distance:0`: a cheap check that SELECT comes after UNION before the regex runs.
 - New regex: it also accepts an SQL comment, a bracket or a plus sign between the two words, and the keyword DISTINCT. The first version accepted whitespace only.
 - `$HTTP_PORTS` became `any`, plus `flow` and `threshold:type limit`: same reasons as SID 9000004.
-- Not fixed: it is still URL-only and still fires on the "student union select committee" search. The same idea on `http.request_body` would cover POST forms, but that buffer is not URL-decoded, so the regex would need changes. I did not write that rule.
+- Not fixed: it is still URL-only and still fires on the "student union select committee" search. For POST forms, ET Open already has a request-body rule (SID 2053468), so I did not write one.
 
 **SID 9000006 rev 2 (UNTESTED), kept only as a low-severity hint**
 
@@ -365,7 +366,7 @@ Two rules match a tool's default User-Agent. One matches a list of ports. One ma
 How a SOC covers it:
 
 - **Another data source that shows behaviour.** Flow records show how many different ports one source touched, which is a real scan signal. Web server access logs show the rate of 404 answers and still work for HTTPS, because the server logs after decryption. DNS logs show the number of queries and of different sub-domains per parent domain.
-- **A maintained ruleset for breadth.** ET Open is already loaded in my lab. Some of my rules probably repeat signatures it already has.
+- **A maintained ruleset for breadth.** ET Open is already loaded in my lab, and three of my seven rules repeat signatures it already has. ET's versions only match a source outside `$HOME_NET`. My attacker VM was inside it, so they would not have fired in my lab.
 - **Testing with variants.** Each rule is re-tested with a changed version of the attack, and the misses are written down.
 
 ### 3. Network only, one event at a time, and severity that ignores confidence
@@ -387,16 +388,35 @@ How a SOC covers it:
 5. I wrote the rules for my lab's layout. The attacker VM was inside the monitored network, so a rule that needs both ends to be internal passed its test and would miss a real callback.
 6. My Wazuh rules only renamed Suricata alerts. The value of a SIEM rule is in joining events: a scan and then an exploit, or a network attempt and a host log.
 
+## Checked against official sources
+
+Done on 16 Nov 2026. This checks facts, not behaviour: no rule on this page was loaded or run.
+
+| Claim on this page | Source | Result |
+|---|---|---|
+| The 12 ATT&CK technique IDs and their names | attack.mitre.org, ATT&CK v20.1 | All 12 match. None is deprecated or revoked. |
+| T1571 fits a rule on ports 4444, 4445 and 31337 | T1571 page | Its examples include a group that used ports 4444, 4445 and 31337 for C2. |
+| T1595.003 fits a gobuster rule | T1595.003 page | The description names GoBuster as an example tool. |
+| T1046 covers both Nmap rules | T1046 page | The description lists port, vulnerability and wordlist scans. |
+| Wazuh rule 86601 is the built-in "Suricata alert" rule | Wazuh ruleset at tag v4.11.2, file `0475-suricata_rules.xml` | Confirmed. It is the child of rule 86600 that matches `event_type` equal to `alert`. |
+| The built-in sshd rules are the 5700 series and use the group `authentication_failed` | Same ruleset, file `0095-sshd_rules.xml` | Confirmed. IDs run from 5700 to 5763, and the login-failure rules carry that group. |
+| The shape of my correlation rule exists in Wazuh | Same ruleset, rule 40112 | Confirmed for `timeframe` with `if_matched_group`. Rule 40112 uses `same_source_ip` where mine uses `same_field`, so mine is still untested. |
+| `detection_filter` alerts on every match after the threshold | Suricata 6.0.4 documentation, thresholding page | Confirmed. It "generates an alert for each rule match after the initial threshold has been reached". |
+| `flags:S,12` is valid and ignores the ECN bits | ET Open rules for Suricata 6.0, and the Suricata documentation for `tcp.flags` | Confirmed. ET Open's SSH scan rule uses this exact form. |
+| ET Open already has some of my signatures | ET Open rules for Suricata 6.0 | Confirmed for three: the Nmap User-Agent (SID 2009358), the SSH connection rate (SID 2001219) and UNION SELECT in the URL (SID 2006446). I found no gobuster rule in the four files I searched. |
+
+One more thing this check showed: ET rates its own SSH scan rule and Nmap User-Agent rule as Informational. That supports lowering my levels for the same detections.
+
 ## Honest limits
 
 - **Lab only.** Three VMs and no normal user traffic. The false-positive notes are reasoning, not measurements. I have no false-positive rate and no detection rate.
-- **"Detected" means "fired at least once"** on the default form of one attack. The SQL injection rule fired twice, with the scanner forced to one technique. The DNS rule was tested with a hand-made query, not with a real tunnelling tool.
+- **The only test was "did the rule fire at least once?"**, on the default form of one attack. My log does not tie each alert to the attack that caused it. The SQL injection rule fired twice, with the scanner forced to one technique. The DNS rule was tested with a hand-made query, not with a real tunnelling tool.
 - **Every improved rule is untested.** Not loaded, not syntax-checked, not run against the scenarios. The regexes were only tried on sample strings in Python.
 - **The thresholds are guesses.** 20 in 10 seconds, 5 in 60 seconds, 30 in 10 seconds and 10 in 60 seconds have no baseline behind them.
 - **Old sensor version.** My lab ran Suricata 6.0.4, an old release line. The improved rules are written for it.
 - **The reviewed file may differ from the tested one.** My session notes say I added `flow:to_server` to SID 9000003 directly on the sensor. The repo file does not have it. The review used the repo files.
 - **The later pipeline stages were tested with synthetic alerts.** The evidence I kept for the enrichment, case creation and response stages shows alerts posted to the webhook, not live attacks. So the full path from a live attack to a TheHive case was not shown for all 7 rules.
-- **The review was done with an AI assistant.** It read files and logs and did not touch the lab. The ATT&CK mappings and the built-in Wazuh rule ID (86601) should be checked against the official sources before anyone relies on them.
+- **The review was done with an AI assistant.** It read files and logs and did not touch the lab. The facts it relied on were checked against official sources (see the section above). Which ATT&CK technique fits a rule best is still a judgement.
 - **No machine learning.** The pipeline calls an off-the-shelf local language model to write a one-line summary and suggest a severity. It does no detection, and I trained nothing.
 
 ## Privacy check (before every commit and post)
