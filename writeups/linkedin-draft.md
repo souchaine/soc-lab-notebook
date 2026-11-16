@@ -1,6 +1,6 @@
 # LinkedIn draft · detection rules review
 
-Status: draft, not posted. Replace `[LINK-TO-GITHUB-FILE]` with the URL of `writeups/pfe-detection-rules-review.md` after it is pushed.
+Status: draft, not posted.
 
 ---
 
@@ -16,6 +16,6 @@ The proposed fix is one line: a threshold that gives one alert per source per ti
 
 The review also covers false positives, gaps, ATT&CK mapping and three weaknesses of the whole rule set. These are lab results, not production numbers.
 
-Write-up: [LINK-TO-GITHUB-FILE]
+Write-up: https://github.com/souchaine/soc-lab-notebook/blob/main/writeups/pfe-detection-rules-review.md
 
 #DetectionEngineering #Suricata #Wazuh #SOC
