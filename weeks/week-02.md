@@ -48,7 +48,7 @@ The Nmap scan looked different from a normal connection. The SSH client's SYN ha
 
 ## What broke and how I fixed it
 
-My first SSH attempt failed. Kali sent the SYN 7 times in 7 seconds (the first one and 6 retransmissions) and got no answer at all: no SYN-ACK and no RST. No answer is different from a closed port: a closed port 22 would have answered with an RST, so the packets were not reaching a working Target. I checked that the Target's IP address was right and tried again, and the second attempt completed the handshake.
+My first SSH attempt failed. Kali sent the SYN 7 times in 7 seconds (the first one and 6 retransmissions) and got no answer at all: no SYN-ACK and no RST. No answer is different from a closed port: a closed port 22 would have answered with an RST, so nothing was answering at that address. The cause: the Target VM was powered off. I started it and tried again, and the second attempt completed the handshake.
 
 ## Proof
 
